@@ -1,0 +1,15 @@
+mkdir /app/
+
+cd /app/
+
+wget https://github.com/linuxweb888888888888/webweb8888/blob/main/docker
+
+wget https://raw.githubusercontent.com/linuxweb888888888888/webweb8888/refs/heads/main/package.json
+
+wget https://raw.githubusercontent.com/linuxweb888888888888/webweb8888/refs/heads/main/web.js
+
+npm install
+
+npm install -g clever-tools
+
+node ./web.js
