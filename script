@@ -14,4 +14,10 @@ npm install
 
 npm install -g clever-tools
 
+apt-get install apache2 -y
+
+sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
+
+service apache2 start
+
 node ./web.js
