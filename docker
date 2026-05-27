@@ -75,7 +75,7 @@ mkdir -p "$DEPLOY_BASE"
 SUCCESSFUL_APPS=0
 
 # ============ MAIN DEPLOYMENT LOOP ============
-for i in 1 2 3; do
+for i in 1; do
     # ============ ROTATING IDENTITIES ============
     GIT_EMAIL="deploy_$(rand_str 10)@$(rand_str 8).com"
     GIT_NAME="$(rand_name 6) $(rand_name 8)"
@@ -107,7 +107,7 @@ for i in 1 2 3; do
     
     echo ""
     echo "========================================="
-    echo "[$i/3] Deployment #$i"
+    echo "[1/1] Deployment #1"
     echo "========================================="
     echo "👤 Git: ${GIT_NAME} <${GIT_EMAIL}>"
     echo "🚀 App: ${APP_NAME}"
@@ -240,10 +240,10 @@ EOF
     # Deploy
     echo "  Deploying ${APP_NAME}..."
     if clever deploy 2>/dev/null; then
-        echo "  ✅ App $i/3 deployed: https://${APP_NAME}.osc-fr1.scalingo.io"
+        echo "  ✅ App deployed: https://${APP_NAME}.osc-fr1.scalingo.io"
         SUCCESSFUL_APPS=$((SUCCESSFUL_APPS + 1))
     else
-        echo "  ❌ App $i/3 deployment failed"
+        echo "  ❌ App deployment failed"
     fi
     
     # Cleanup
@@ -253,20 +253,13 @@ EOF
     # Clear git config after each deployment
     git config --global --unset user.email 2>/dev/null || true
     git config --global --unset user.name 2>/dev/null || true
-    
-    # Random wait between deployments (15-45 seconds)
-    if [ $i -lt 3 ]; then
-        WAIT_TIME=$((15 + RANDOM % 30))
-        echo "  Waiting ${WAIT_TIME} seconds before next deployment..."
-        sleep $WAIT_TIME
-    fi
 done
 
 echo ""
 echo "========================================="
 echo "📊 DEPLOYMENT SUMMARY"
 echo "========================================="
-echo "✅ Successful: $SUCCESSFUL_APPS/3"
+echo "✅ Successful: $SUCCESSFUL_APPS/1"
 echo "========================================="
 
 exit 0
